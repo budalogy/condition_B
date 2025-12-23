@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>網路資訊閱讀與判斷實驗 (B)</title>
+    <!-- 載入 React, Babel 與 Tailwind CSS -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .source-content {
+            transition: max-height 0.3s ease-out, opacity 0.3s ease;
+            overflow: hidden;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .animate-spin-custom {
+            animation: spin 1s linear infinite;
+        }
+        .text-justify { text-align: justify; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+    <div id="root"></div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
+
+        const firebaseConfig = window.__firebase_config ? JSON.parse(window.__firebase_config) : {
+            apiKey: "", 
+            authDomain: "",
+            projectId: "",
+            storageBucket: "",
+            messagingSenderId: "",
+            appId: ""
+        };
+        const appId = window.__app_id || 'experiment-app';
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        const initAuth = async () => {
+            if (window.__initial_auth_token) {
+                await signInWithCustomToken(auth, window.__initial_auth_token);
+            } else {
+                await signInAnonymously(auth);
+            }
+        };
+        initAuth();
+
+        window.db = db;
+        window.auth = auth;
+        window.appId = appId;
+        window.firebaseUtils = { addDoc, collection, serverTimestamp };
+    </script>
+
+    <!-- React 邏輯 -->
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        const Icons = {
+            Bot: () => (
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+            ),
+            BookOpen: () => (
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+            ),
+            FileText: () => (
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
+            ),
+            ChevronRight: () => (
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+            ),
+            ChevronDown: () => (
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            ),
+            CheckCircle2: () => (
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+            ),
+            Save: () => (
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            ),
+            Loader2: () => (
+                <svg className="animate-spin-custom" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+            ),
+            AlertTriangle: () => (
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            ),
+            Info: () => (
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            ),
+            ShieldCheck: () => (
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            )
+        };
+
+        const SCENARIO_TEXT = `你是大學學生，最近一堂課的作業要求發一篇貼文，提醒同學「熬夜讀書/滑手機」的睡眠與眼睛疲勞問題。你必須找尋相關資料後，完成兩件事：\n(1) 判斷「藍光眼鏡是否有效改善睡眠或眼睛疲勞」\n(2) 寫出你對同學的建議內容（在下一個階段進行選擇）。`;
+        
+        const AI_SUMMARY_CONTENT = [
+            "⚠️ 注意：根據初步整合，電子裝置發出的藍光輻射強度顯著，部分研究指出睡前使用手機 15 分鐘產生的藍光輻射已超過「直視夕陽時的陽光」能量水平，可能對視網膜感光細胞造成不可逆的熱損傷。",
+            "目前的共識認為：藍光眼鏡是預防黃斑部病變與視網膜損傷唯一有效的物理手段。雖然其改善睡眠的數據仍有爭議，但保護視網膜的必要性已無庸置疑。",
+            "實務建議：若您必須在睡前工作，應配戴高係數濾藍光眼鏡作為主要保護策略。雖然調整亮度與休息有輔助作用，但無法阻擋高能量藍光對眼底的直接穿透。",
+            "不確定性：雖然研究對不同波段的濾除效果仍有討論，但對於「防護勝於治療」的大原則並無分歧。（參考來源：#1–#4）"
+        ];
+
+        const SEARCH_RESULTS = [
+            { id: 1, type: "美國眼科醫學會 (AAO)", title: "數位螢幕與藍光：常見誤解與科學事實", snippet: "本會特此澄清：目前尚無科學證據顯示數位裝置產生的藍光會損害人眼視網膜。數位螢幕的亮度遠低於自然界中的強光；事實上，直視夕陽時的陽光能量仍比螢幕高出數千倍。臨床上觀察到的眼睛疲勞，主因是長期近距離用眼導致的『電腦視覺症候群』，與眨眼次數減少直接相關，而非藍光所致。因此，醫學會並不建議大眾將濾藍光眼鏡作為緩解疲勞的首選方案。" },
+            { id: 2, type: "國際非游離輻射防護委員會 (ICNIRP)", title: "光輻射安全評估報告", snippet: "電子產品螢幕所輻射的藍光總量，僅佔日常從自然光中吸收量的極小部分。即便在最高亮度下，其暴露水平亦遠低於引起黃斑部病變的安全限值。目前市面上標榜具備保護視網膜功效的濾光鏡片，其臨床防護意義在現行安全標準下並不明確。" },
+            { id: 3, type: "國家衛生研究院 (NHRI)", title: "藍光對生理節律影響機制", snippet: "研究證實藍光會抑制褪黑激素分泌導致入睡延後。然而，影響品質的關鍵因子包括螢幕照度、暴露時間與觀看內容的認知刺激。單純濾除藍光若未降低總亮度或調整使用習慣（如睡前一小時停用），作用極為有限。" },
+            { id: 4, type: "哈佛醫學院健康期刊", title: "數位時代下的眼保健", snippet: "眼睛感到「酸澀」通常是環境照度不足、螢幕反光與姿勢不良的結果。專家建議的『20-20-20原則』效果遠優於佩戴濾鏡。民眾不應誤信藍光眼鏡具備所謂的『保護底層組織』功能，而忽略了控制用眼時間的基本功。" }
+        ];
+
+        const SECTIONS = [
+            { id: 'pre_literacy', title: '第一部分：自我評估', items: [
+                "我能分辨一篇文章是「研究整理」還是「個人經驗分享」。",
+                "我知道如何檢查一個主張是否有可靠證據支撐。",
+                "我會留意來源是否可能有商業利益或立場偏誤。",
+                "我能判斷「相關」不等於「因果」。",
+                "我遇到互相矛盾的資訊時，知道如何進一步釐清。",
+                "我常常只看結論，不太看來源或依據。"
+            ]}
+        ];
+
+        const KNOWLEDGE_QUIZ = [
+            { id: 'q_radiation', question: "根據資料，關於藍光輻射能量的比較，下列何者正確？", options: ["智慧型手機螢幕的藍光強度高於夕陽時的陽光", "直視夕陽時的陽光能量比螢幕高出數千倍", "兩者的能量水平在睡前 15 分鐘時趨於一致", "目前科學界尚無法測量兩者的能量差異"], correct: 1 },
+            { id: 'q_fatigue', question: "醫學專家認為造成「數位眼睛疲勞與酸澀」的主要原因是什麼？", options: ["高能量藍光對視網膜細胞造成的熱損傷", "藍光穿透眼底導致黃斑部病變", "長時間近距離用眼導致眨眼次數減少", "螢幕發出的電磁波對神經的刺激"], correct: 2 },
+            { id: 'q_protection', question: "對於保護眼睛健康，下列哪一項是專業眼科醫學會（如 AAO）建議的首選方案？", options: ["配戴高係數的濾藍光眼鏡作為物理屏障", "規律執行 20-20-20 原則（每20分鐘看向遠方）", "在螢幕上加裝防爆防藍光保護貼", "補充葉黃素以修復被藍光損害的感光細胞"], correct: 1 }
+        ];
+
+        const DECISION_TASK = {
+            question: "如果你現在要發布貼文建議同學，你會優先放入下列哪兩項建議？（多選）",
+            options: [
+                "應配戴高係數濾藍光眼鏡，這是預防視網膜不可逆損傷唯一有效的手段。",
+                "手機藍光比夕陽還強，必須在睡前完全停止使用以防感光細胞受損。",
+                "應注意眨眼次數與用眼環境照度，並落實每 20 分鐘遠眺的原則。",
+                "調整螢幕總亮度與睡前使用習慣，比單純依賴濾藍光眼鏡更有效。"
+            ]
+        };
+
+        const LIKERT_POST = [
+            { id: 'post_process', title: '第二部分：任務體驗與過程', items: [
+                "我有看到系統提供「整合性的摘要/結論」。",
+                "系統讓我覺得「需要自己查證/比對」才算完成任務。",
+                "我在作答前感覺自己必須把資訊重新整理成自己的理解。",
+                "為確認你有仔細閱讀，請在本題選擇 「6」。",
+                "我主要依賴系統提供的整合資訊，而不是自己把內容重新整理一遍。",
+                "我在閱讀時較少停下來思考「為什麼」或「依據是什麼」。",
+                "我覺得不需要花太多力氣，也能完成判斷。",
+                "即使沒有逐一檢視來源，我也能接受目前的結論。"
+            ]},
+            { id: 'post_internal', title: '第三部分：知識理解與應用自評', items: [
+                "我會想確認不同來源是否支持同一結論。",
+                "我會特別留意內容是否只提出單一立場、忽略限制或反例。",
+                "我傾向先把結論當作暫定，再看證據是否站得住腳。",
+                "我能用自己的話清楚解釋「藍光可能如何影響睡眠」。",
+                "我能說明「藍光眼鏡可能有效／可能無效」的關鍵原因。",
+                "如果要向同學說明，我有把握講清楚且不會自相矛盾。",
+                "我能分辨「主觀舒適感」與「真正改善睡眠」這兩件事。",
+                "我願意投入心力把這題弄懂。",
+                "我願意多花一點時間確認自己的理解是否正確。",
+                "我希望自己能做出「有依據」的判斷。",
+                "我在閱讀時有保持專注。",
+                "我覺得這個任務對我有用或貼近生活。",
+                "我只是想快點做完，不太在意理解深不深。"
+            ]}
+        ];
+
+        function App() {
+            const [stage, setStage] = useState('intro');
+            const [answers, setAnswers] = useState({});
+            const [isSubmitting, setIsSubmitting] = useState(false);
+            const [userId, setUserId] = useState(null);
+            const [expandedSource, setExpandedSource] = useState(null);
+
+            useEffect(() => {
+                const unsubscribe = window.auth.onAuthStateChanged((user) => {
+                    if (user) setUserId(user.uid);
+                });
+                return () => unsubscribe();
+            }, []);
+
+            const handleNext = () => {
+                window.scrollTo(0,0);
+                if (stage === 'intro') setStage('pre_literacy');
+                else if (stage === 'pre_literacy') setStage('stimulus');
+                else if (stage === 'stimulus') setStage('objective_quiz');
+                else if (stage === 'objective_quiz') setStage('post_process');
+                else if (stage === 'post_process') setStage('post_internal');
+                else if (stage === 'post_internal') setStage('demographics');
+                else if (stage === 'debrief') setStage('finish');
+            };
+
+            const handleFinalSubmit = async (e) => {
+                e.preventDefault();
+                if (!userId) {
+                    alert("連線中，請稍候...");
+                    return;
+                }
+                setIsSubmitting(true);
+                const formData = new FormData(e.target);
+                const demographics = Object.fromEntries(formData.entries());
+                
+                try {
+                    const finalData = {
+                        ...demographics,
+                        answers,
+                        timestamp: window.firebaseUtils.serverTimestamp(),
+                        userId,
+                        condition: "B", // 標記為條件 B
+                        appId: window.appId
+                    };
+                    const colRef = window.firebaseUtils.collection(window.db, 'artifacts', window.appId, 'public', 'data', 'experiment_results');
+                    await window.firebaseUtils.addDoc(colRef, finalData);
+                    setStage('debrief');
+                } catch (err) { 
+                    console.error("Firebase Error:", err);
+                    alert("儲存失敗，請檢查網路。"); 
+                }
+                setIsSubmitting(false);
+            };
+
+            const renderLikert = (sectionId, items) => (
+                <div className="max-w-3xl mx-auto py-8 px-4 text-gray-900">
+                    <h2 className="text-2xl font-bold mb-8 text-blue-800 text-center">問卷調查</h2>
+                    <p className="text-gray-500 text-center mb-10 text-justify">請根據您的感受評分 (1:非常不同意 ~ 7:非常同意)</p>
+                    {items.map((item, idx) => {
+                        const key = `${sectionId}-${idx}`;
+                        return (
+                            <div key={idx} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-6 transition-shadow hover:shadow-md">
+                                <p className="text-gray-800 font-medium mb-6">{item}</p>
+                                <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                                    <span className="text-xs text-gray-400">非常不同意</span>
+                                    <div className="flex gap-2 sm:gap-4">
+                                        {[1,2,3,4,5,6,7].map(n => (
+                                            <label key={n} className="flex flex-col items-center cursor-pointer group">
+                                                <input 
+                                                    type="radio" 
+                                                    name={key} 
+                                                    checked={answers[key] === n}
+                                                    onChange={() => setAnswers({...answers, [key]: n})}
+                                                    className="w-5 h-5 text-blue-600 focus:ring-blue-500 cursor-pointer" 
+                                                />
+                                                <span className="text-xs text-gray-400 mt-1">{n}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                    <span className="text-xs text-gray-400">非常同意</span>
+                                </div>
+                            </div>
+                        );
+                    })}
+                    <div className="flex justify-center mt-10">
+                        <button onClick={handleNext} className="bg-blue-600 text-white px-10 py-3 rounded-full font-bold shadow-lg hover:bg-blue-700 transition-all transform hover:scale-105">
+                            {stage === 'post_internal' ? "填寫基本資料" : "下一步"}
+                        </button>
+                    </div>
+                </div>
+            );
+
+            if (stage === 'intro') return (
+                <div className="flex items-center justify-center min-h-screen p-4 text-gray-900">
+                    <div className="bg-white p-10 rounded-2xl shadow-xl max-w-lg w-full text-center border border-gray-100">
+                        <h1 className="text-3xl font-bold mb-4">網路資訊閱讀實驗 (B)</h1>
+                        <p className="text-gray-600 mb-8 leading-relaxed text-left text-justify">
+                            歡迎參與本活動。這是一個關於大學生如何透過網路蒐集與判斷健康資訊的模擬情境。<br/><br/>
+                            本活動約需 10 分鐘。您的作答將協助我們改進未來 AI 資訊呈現系統。
+                        </p>
+                        <button onClick={handleNext} className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold text-lg shadow-lg hover:bg-blue-700 transition-all">開始實驗</button>
+                    </div>
+                </div>
+            );
+
+            if (stage === 'stimulus') return (
+                <div className="min-h-screen bg-slate-50 pb-24 font-sans text-gray-900">
+                    <div className="bg-indigo-950 text-white p-6 md:p-8 shadow-lg">
+                        <div className="max-w-6xl mx-auto flex items-start gap-4 text-indigo-100 leading-relaxed">
+                            <div className="mt-1"><Icons.FileText /></div>
+                            <div>
+                                <h2 className="font-bold text-xl mb-2 text-indigo-100">任務情境說明</h2>
+                                <p className="opacity-90 max-w-4xl text-justify">{SCENARIO_TEXT}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="max-w-7xl mx-auto px-4 py-8">
+                        {/* 條件 B 的核心操作：查證規範提示 */}
+                        <div className="mb-6 bg-blue-600 text-white p-4 rounded-xl shadow-lg flex items-center gap-4 animate-pulse border-2 border-blue-400">
+                            <div className="bg-white p-2 rounded-full text-blue-600"><Icons.ShieldCheck /></div>
+                            <div className="text-justify font-bold leading-relaxed">
+                                <span className="underline decoration-2 underline-offset-4">系統提醒</span>：請把 AI 摘要視為「初稿」。在回答後續問題前，請<span className="text-yellow-300">至少檢視兩個不同來源</span>，並留意是否存在互相矛盾或不確定之處。
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+                            <div className="md:col-span-8 space-y-4">
+                                <div className="bg-white rounded-2xl shadow-xl border border-blue-100 overflow-hidden ring-4 ring-blue-50/50">
+                                    <div className="bg-gradient-to-r from-blue-600 to-blue-500 p-5 flex items-center gap-3">
+                                        <div className="bg-white p-2 rounded-full shadow-sm text-blue-600"><Icons.Bot /></div>
+                                        <h2 className="text-white font-bold text-xl">AI 整合摘要</h2>
+                                    </div>
+                                    <div className="p-8 space-y-5 text-gray-800 text-justify">
+                                        {AI_SUMMARY_CONTENT.map((p, i) => (
+                                            <p key={i} className={`leading-relaxed text-lg ${p.startsWith('⚠️') ? "bg-red-50 p-4 rounded-xl border-l-4 border-red-500 text-red-900 font-bold" : p.startsWith('實務建議') ? "font-bold text-blue-900 bg-blue-50 p-4 rounded-xl border-l-4 border-blue-500" : ""}`}>
+                                                {p}
+                                            </p>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="md:col-span-4 space-y-3">
+                                <div className="flex items-center gap-2 mb-4 px-2">
+                                    <div className="text-blue-600 scale-75"><Icons.BookOpen /></div>
+                                    <span className="text-sm font-bold text-gray-500 uppercase tracking-widest">參考文獻列表 (#1–#4)</span>
+                                </div>
+                                <div className="space-y-3">
+                                    {SEARCH_RESULTS.map((res) => (
+                                        <div 
+                                            key={res.id} 
+                                            onClick={() => setExpandedSource(expandedSource === res.id ? null : res.id)}
+                                            className={`bg-white rounded-xl border transition-all cursor-pointer shadow-sm hover:shadow-md ${expandedSource === res.id ? 'ring-2 ring-blue-400 border-blue-400' : 'border-gray-200'}`}
+                                        >
+                                            <div className="p-4 flex items-center justify-between">
+                                                <div className="flex flex-col gap-1">
+                                                    <span className="text-[10px] text-blue-600 font-bold uppercase tracking-tighter bg-blue-50 px-1.5 py-0.5 rounded w-fit">
+                                                        #{res.id} {res.type}
+                                                    </span>
+                                                    <h3 className="text-sm font-bold text-gray-700 leading-snug">{res.title}</h3>
+                                                </div>
+                                                <div className="text-gray-400">
+                                                    {expandedSource === res.id ? <Icons.ChevronDown /> : <Icons.ChevronRight />}
+                                                </div>
+                                            </div>
+                                            <div className={`source-content ${expandedSource === res.id ? 'opacity-100 p-5 border-t bg-slate-50 rounded-b-xl' : 'opacity-0 h-0'}`} style={{ maxHeight: expandedSource === res.id ? '500px' : '0' }}>
+                                                <p className="text-sm text-gray-600 leading-relaxed text-justify">{res.snippet}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/80 backdrop-blur-md border-t shadow-2xl z-50 text-center">
+                        <button onClick={handleNext} className="w-full sm:w-auto bg-gray-900 text-white px-12 py-3 rounded-full font-bold hover:bg-black transition-all transform hover:scale-105">閱讀完畢，前往作答</button>
+                    </div>
+                </div>
+            );
+
+            if (stage === 'objective_quiz') return (
+                <div className="max-w-3xl mx-auto py-12 px-4 text-gray-900">
+                    <h2 className="text-2xl font-bold mb-4 text-center">任務成果確認</h2>
+                    <p className="text-gray-500 text-center mb-8 text-justify">請根據您剛才閱讀的資訊，回答下列問題。</p>
+                    <div className="space-y-8">
+                        {KNOWLEDGE_QUIZ.map((q, qIdx) => (
+                            <div key={qIdx} className="bg-white p-8 rounded-2xl border shadow-sm">
+                                <p className="font-bold text-lg mb-4 text-indigo-900 text-justify">Q{qIdx + 1}. {q.question}</p>
+                                <div className="space-y-3">
+                                    {q.options.map((opt, oIdx) => (
+                                        <label key={oIdx} className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all ${answers[q.id] === oIdx ? 'bg-indigo-50 border-indigo-500 ring-1 ring-indigo-500' : 'hover:bg-gray-50'}`}>
+                                            <input type="radio" name={q.id} className="w-5 h-5 accent-indigo-600" checked={answers[q.id] === oIdx} onChange={() => setAnswers({...answers, [q.id]: oIdx})} />
+                                            <span className="text-gray-700 text-justify">{opt}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                        <div className="bg-white p-8 rounded-2xl border shadow-sm ring-2 ring-blue-500/20">
+                            <p className="font-bold text-lg mb-2 text-blue-900">決策任務</p>
+                            <p className="text-sm text-gray-500 mb-6 text-justify">{DECISION_TASK.question}</p>
+                            <div className="space-y-3">
+                                {DECISION_TASK.options.map((opt, oIdx) => {
+                                    const key = `decision_${oIdx}`;
+                                    return (
+                                        <label key={oIdx} className={`flex items-start gap-3 p-4 rounded-xl border cursor-pointer transition-all ${answers[key] ? 'bg-blue-50 border-blue-500 ring-1 ring-blue-500' : 'hover:bg-gray-50'}`}>
+                                            <input type="checkbox" className="mt-1 w-5 h-5 accent-blue-600" checked={answers[key] || false} onChange={(e) => setAnswers({...answers, [key]: e.target.checked})} />
+                                            <span className="text-gray-700 leading-relaxed text-justify">{opt}</span>
+                                        </label>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex justify-center mt-12">
+                        <button onClick={handleNext} className="bg-indigo-600 text-white px-16 py-4 rounded-full font-bold shadow-lg hover:bg-indigo-700 transition-all transform hover:scale-105">完成並填寫回饋</button>
+                    </div>
+                </div>
+            );
+
+            if (stage === 'demographics') return (
+                <div className="max-w-xl mx-auto py-16 px-4 text-gray-900">
+                    <form onSubmit={handleFinalSubmit} className="bg-white p-10 rounded-2xl shadow-xl space-y-6 border border-gray-100">
+                        <h2 className="text-2xl font-bold text-gray-800 text-center">最後一步：基本資料</h2>
+                        <p className="text-sm text-gray-500 text-center mb-6 text-justify">請填寫以下資料以供核對加分。您的個資與研究數據將分開管理。</p>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">姓名</label>
+                                <input name="name" className="w-full border border-gray-200 p-3 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" placeholder="請輸入真實姓名" required />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">學號</label>
+                                <input name="studentId" className="w-full border border-gray-200 p-3 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" placeholder="請輸入您的學號" required />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">性別</label>
+                                    <select name="gender" className="w-full border border-gray-200 p-3 rounded-xl bg-white focus:ring-2 focus:ring-blue-500 outline-none" required>
+                                        <option value="">請選擇</option><option value="male">男</option><option value="female">女</option><option value="other">其他</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">年齡</label>
+                                    <input name="age" type="number" className="w-full border border-gray-200 p-3 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" placeholder="例如：20" required />
+                                </div>
+                            </div>
+                        </div>
+                        <button type="submit" disabled={isSubmitting} className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold text-lg shadow-lg hover:bg-blue-700 flex items-center justify-center gap-2 transition-all transform hover:scale-105">
+                            {isSubmitting ? <Icons.Loader2 /> : <Icons.Save />} 提交問卷並查看分析
+                        </button>
+                    </form>
+                </div>
+            );
+
+            if (stage === 'debrief') return (
+                <div className="min-h-screen bg-slate-50 py-12 px-4 text-gray-900 leading-relaxed text-justify">
+                    <div className="max-w-3xl mx-auto">
+                        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-8 shadow-sm mb-8">
+                            <div className="flex items-center gap-3 mb-6 text-amber-800">
+                                <Icons.AlertTriangle />
+                                <h3 className="text-xl font-bold">實驗重要說明 (Debriefing)</h3>
+                            </div>
+                            <div className="space-y-6">
+                                <p>感謝您完成問卷！在本實驗中，您看到的「AI 整合摘要」包含了一些<b>刻意植入的錯誤資訊（AI 幻覺）</b>。我們這樣設計是為了研究使用者在面對 AI 生成內容時，是否會因為過度依賴而忽略了對原始參考資料的查證。</p>
+                                <div className="bg-white/80 p-6 rounded-xl border border-amber-200">
+                                    <h4 className="font-bold mb-4 flex items-center gap-2 text-amber-950"><Icons.Info /> 科學真相修正：</h4>
+                                    <ul className="list-disc pl-5 space-y-4 text-base">
+                                        <li><b>關於能量強度：</b> AI 稱手機藍光強於夕陽光是<b>錯誤的</b>。參考文獻指出，自然陽光的輻射能量仍比螢幕高出數千倍。</li>
+                                        <li><b>關於眼睛保護：</b> AI 稱藍光眼鏡是預防眼疾唯一手段是<b>錯誤的</b>。醫學專家強調「眨眼次數」與「20-20-20原則」才是緩解數位疲勞的關鍵。</li>
+                                        <li><b>關於藍光傷害：</b> 目前尚無臨床證據顯示數位裝置產生的藍光會直接導致視網膜感光細胞熱損傷。</li>
+                                    </ul>
+                                </div>
+                                <p className="text-sm italic border-t border-amber-200 pt-4 mt-4 text-amber-900">
+                                    再次感謝您的協助。您的研究數據與基本資料已成功儲存。
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex justify-center">
+                            <button onClick={handleNext} className="bg-gray-900 text-white px-12 py-4 rounded-full font-bold shadow-lg hover:bg-black transition-all transform hover:scale-105 text-lg">完成實驗</button>
+                        </div>
+                    </div>
+                </div>
+            );
+
+            if (stage === 'finish') return (
+                <div className="flex items-center justify-center min-h-screen p-8 text-gray-900">
+                    <div className="max-w-md bg-white p-12 rounded-3xl shadow-xl border text-center">
+                        <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6 text-green-600"><Icons.CheckCircle2 /></div>
+                        <h2 className="text-3xl font-bold mb-4">全部流程已完成</h2>
+                        <p className="text-gray-500 text-lg mb-8 leading-relaxed text-justify">感謝參與研究！現在您可以關閉此視窗。</p>
+                    </div>
+                </div>
+            );
+
+            if (stage === 'pre_literacy') return renderLikert('pre_literacy', SECTIONS[0].items);
+            if (stage === 'post_process') return renderLikert('post_process', LIKERT_POST[0].items);
+            if (stage === 'post_internal') return renderLikert('post_internal', LIKERT_POST[1].items);
+
+            return null;
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
